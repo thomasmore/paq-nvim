@@ -275,6 +275,8 @@ end
 ---@field pin boolean
 ---@field build string | function
 ---@field url string
+---@field config function
+---@field defer boolean
 
 ---@param pkg Package
 ---@param counter function
@@ -407,13 +409,27 @@ local function register(pkg)
     if not name then
         return vim.notify(" Paq: Failed to parse " .. vim.inspect(pkg), vim.log.levels.ERROR)
     end
-    local opt = pkg.opt or Config.opt and pkg.opt == nil
+    local opt = (pkg.opt or pkg.defer) or Config.opt and pkg.opt == nil
     local dir = Config.path .. (opt and "opt/" or "start/") .. name
+    local status = uv.fs_stat(dir) and Status.INSTALLED or Status.TO_INSTALL
+    if status == Status.INSTALLED then
+        if pkg.config and not opt then
+            pkg.config()
+        end
+        if pkg.defer then
+            vim.defer_fn(function()
+                vim.cmd.packadd(name)
+                if pkg.config then
+                    pkg.config()
+                end
+            end, 500)
+        end
+    end
     Packages[name] = {
         name = name,
         branch = pkg.branch,
         dir = dir,
-        status = uv.fs_stat(dir) and Status.INSTALLED or Status.TO_INSTALL,
+        status = status,
         hash = get_git_hash(dir),
         pin = pkg.pin,
         build = pkg.build or pkg.run,
