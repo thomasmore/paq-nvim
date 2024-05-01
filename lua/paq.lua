@@ -226,6 +226,8 @@ end
 ---@field opt boolean
 ---@field build string | function
 ---@field url string
+---@field config function
+---@field defer boolean
 
 ---@param pkg Package
 ---@param counter function
@@ -381,12 +383,25 @@ local function register(pkg)
     local dir = vim.fs.joinpath(Config.path, (opt and "opt" or "start"), name)
     local ok, hash = pcall(get_git_hash, dir)
     hash = ok and hash or ""
-
+    local status = uv.fs_stat(dir) and Status.INSTALLED or Status.TO_INSTALL
+    if status == Status.INSTALLED then
+        if pkg.config and not opt then
+            pkg.config()
+        end
+        if pkg.defer then
+            vim.defer_fn(function()
+                vim.cmd.packadd(name)
+                if pkg.config then
+                    pkg.config()
+                end
+            end, 500)
+        end
+    end
     Packages[name] = {
         name = name,
         branch = pkg.branch,
         dir = dir,
-        status = uv.fs_stat(dir) and Status.INSTALLED or Status.TO_INSTALL,
+        status = status,
         hash = hash,
         pin = pkg.pin,
         build = pkg.build,
